@@ -36,6 +36,16 @@ func (s Set) Insert(v string) {
 	}
 }
 
+func (s Set) Copy() Set {
+	new_s := NewSet()
+	for i, _ := range s {
+		new_s.Insert(i)
+	}
+	return new_s
+}
+
+const epsilon string = "epsilon"
+
 type DFA struct {
 	States  map[string]*DFAstate
 	Start   string
@@ -140,7 +150,7 @@ func (nfa *NFA) GetFinish() Set {
 	return nfa.Finish
 }
 
-func (nfa *NFA) Trans(fromstate string, symbols []string) Set {
+func (nfa *NFA) Trans(fromstate string, symbols []string) Set { //fromstate is always correct
 	if len(symbols) == 0 {
 		s := NewSet()
 		s.Insert(fromstate)
@@ -155,16 +165,10 @@ func (nfa *NFA) Trans(fromstate string, symbols []string) Set {
 
 }
 
-func (nfa *NFA) TransFromStates(fromstates Set, symbols []string) Set {
-	if len(symbols) == 0 {
-		return fromstates
-	}
-	if len(fromstates) == 0 {
-		return NewSet() // empty set
-	}
+func (nfa *NFA) NextStates(fromstates Set, symbol string) Set {
 	next_states := NewSet()
 	for state, _ := range fromstates {
-		dst_states, ok := nfa.States[state].Trans[symbols[0]]
+		dst_states, ok := nfa.States[state].Trans[symbol]
 		if !ok {
 			continue
 		}
@@ -172,6 +176,17 @@ func (nfa *NFA) TransFromStates(fromstates Set, symbols []string) Set {
 			next_states.Insert(dst_state)
 		}
 	}
+	return next_states
+}
+
+func (nfa *NFA) TransFromStates(fromstates Set, symbols []string) Set {
+	if len(symbols) == 0 {
+		return fromstates
+	}
+	if len(fromstates) == 0 {
+		return NewSet() // empty set
+	}
+	next_states := nfa.NextStates(fromstates, symbols[0])
 	return nfa.TransFromStates(next_states, symbols[1:])
 }
 
@@ -186,6 +201,51 @@ func (nfa *NFA) TransTable() [][]string { // from_state symbol to_state Startsta
 		}
 	}
 	return transtable
+}
+
+type eNFA struct {
+	NFA
+}
+
+func NeweNFA() *eNFA {
+	nfa := NewNFA()
+	return &eNFA{*nfa}
+}
+
+func (enfa *eNFA) Eclose(states Set) Set {
+	s := states.Copy()
+	for state, _ := range states {
+		dsts, ok := enfa.States[state].Trans[epsilon] //didn't check if state exists
+		if !ok {
+			continue
+		}
+		for dst, _ := range dsts {
+			s.Insert(dst)
+		}
+	}
+	return s
+}
+
+func (enfa *eNFA) ETrans(fromstate string, symbols []string) Set {
+	s := NewSet()
+	s.Insert(fromstate)
+	eclose := enfa.Eclose(s)
+	if len(symbols) == 0 {
+		return eclose
+	}
+	return enfa.ETransFromStates(eclose, symbols)
+}
+
+func (enfa *eNFA) ETransFromStates(fromstates Set, symbols []string) Set { //fromstates should be eclosed
+	if len(symbols) == 0 {
+		return fromstates
+	}
+	if len(fromstates) == 0 {
+		return NewSet() // empty set
+	}
+	next_states := enfa.Eclose(enfa.NextStates(fromstates, symbols[0]))
+
+	return enfa.ETransFromStates(next_states, symbols[1:])
 }
 
 func Print(at Automata) {
@@ -278,6 +338,11 @@ func NFADeserialize(s string) *NFA {
 
 }
 
+func eNFADeserialize(e string) *eNFA {
+	nfa := NFADeserialize(e)
+	return &eNFA{*nfa}
+}
+
 func Accept(at Automata, symbols []string) bool {
 	stop_states := NewSet()
 	start := at.GetStart()
@@ -288,13 +353,14 @@ func Accept(at Automata, symbols []string) bool {
 		stop_states.Insert(s)
 	case *NFA:
 		stop_states = a.Trans(start, symbols)
+	case *eNFA:
+		stop_states = a.ETrans(start, symbols)
 	default:
 		panic("Unknown automata type")
 	}
 	if len(stop_states) == 0 {
 		return false //can not consume all symbols
 	}
-	fmt.Println(stop_states)
 	for stop_state, _ := range stop_states {
 		if finish.Has(stop_state) {
 			return true
@@ -377,23 +443,42 @@ func (nfa *NFA) ToDFA() *DFA {
 	return dfa
 }
 
+func Makelist(s string) []string {
+	sb_list := make([]string, 0, 5)
+	for _, char := range s {
+		sb_list = append(sb_list, string(char))
+	}
+	return sb_list
+}
+
+func test(at Automata, s string) {
+	fmt.Println(s, Accept(at, Makelist(s)))
+}
+
 func main() {
-	dat, err := ioutil.ReadFile("./nfa.txt")
+	dat, err := ioutil.ReadFile("../resources/nfa.txt")
 
 	if err != nil {
 		panic(err)
 	}
-	nfa := NFADeserialize(string(dat))
-	dfa := nfa.ToDFA()
-	s := Serialize(dfa)
-	fmt.Println(s)
+	nfa := eNFADeserialize(string(dat))
+	// s := Serialize(nfa)
 
-	// test_str := "1111010"
-	// sb_list := make([]string, 0, 5)
-	// for _, char := range test_str {
-	// 	sb_list = append(sb_list, string(char))
-	// }
-	//
-	// fmt.Println(Accept(dfa, sb_list))
+	test_str := "1111010"
+	test(nfa, test_str)
+	test_str = "1.111010"
+	test(nfa, test_str)
+	test_str = "1111.010"
+	test(nfa, test_str)
+	test_str = ".1111010"
+	test(nfa, test_str)
+	test_str = "123455.1111010"
+	test(nfa, test_str)
+	test_str = "12.3455.1111010"
+	test(nfa, test_str)
+	test_str = "12.345519999999999111010"
+	test(nfa, test_str)
+	test_str = "a12.345519999999999111010"
+	test(nfa, test_str)
 
 }
