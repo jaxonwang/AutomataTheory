@@ -13,6 +13,11 @@ type Automata interface {
 	TransTable() [][]string
 }
 
+type NFAAutomata interface {
+	Automata
+	GetStates() map[string]*NFAstate
+}
+
 type State interface {
 }
 
@@ -179,6 +184,10 @@ func (nfa *NFA) SetStart(s string) {
 
 func (nfa *NFA) GetFinish() Set {
 	return nfa.Finish
+}
+
+func (nfa *NFA) GetStates() map[string]*NFAstate {
+	return nfa.States
 }
 
 func (nfa *NFA) Trans(fromstate string, symbols []string) Set { //fromstate is always correct
@@ -400,37 +409,32 @@ func Accept(at Automata, symbols []string) bool {
 	return false
 }
 
-func (nfa *NFA) ToDFA() *DFA {
-
-	StatesToString := func(states Set) string {
-		var state_list []string
-		for s, _ := range states {
-			state_list = append(state_list, s)
-		}
-		sort.Strings(state_list)
-		return strings.Join(state_list, ",")
-	}
-
+func ToDFA(nfa NFAAutomata) *DFA {
 	DFAStates := NewSet()
 	var DFATrans map[string]map[string]Set
 	DFATrans = make(map[string]map[string]Set) //trans[states][symbols] -> statesSet
-	DFAStart := nfa.Start
 	DFAFinish := NewSet()
 
 	q := queue.New(10)
 	DFA_start_state := NewSet()
-	DFA_start_state.Insert(nfa.Start)
-	DFAStates.Insert(nfa.Start)
+	DFA_start_state.Insert(nfa.GetStart())
+
+	switch enfa := nfa.(type) { // eclose for start
+	case *eNFA:
+		DFA_start_state = enfa.Eclose(DFA_start_state)
+	}
+
+	DFAStates.Insert(DFA_start_state.String())
 	q.Put(DFA_start_state)
 	for !q.Empty() {
 		_states, _ := q.Get(1) //get a dfa states
 		states := _states[0].(Set)
-		states_str := StatesToString(states)
+		states_str := states.String()
 
 		DFATrans[states_str] = make(map[string]Set)
 		trans_for_the_state := DFATrans[states_str]
 		for state, _ := range states {
-			trans := nfa.States[state].Trans
+			trans := nfa.GetStates()[state].Trans
 			for sb, dsts := range trans {
 				_, ok := trans_for_the_state[sb]
 				if !ok {
@@ -439,15 +443,21 @@ func (nfa *NFA) ToDFA() *DFA {
 				for dst, _ := range dsts {
 					trans_for_the_state[sb].Insert(dst)
 				}
+
+				switch enfa := nfa.(type) { // eclose for the enfa
+				case *eNFA:
+					trans_for_the_state[sb] = enfa.Eclose(trans_for_the_state[sb])
+				}
+
 			}
 		}
 		for _, states := range trans_for_the_state {
-			states_str := StatesToString(states)
+			states_str := states.String()
 			if !DFAStates.Has(states_str) { //if never seen, put into the queue
 				q.Put(states)
 				DFAStates.Insert(states_str)
 				// check whether is a finish state
-				for s, _ := range nfa.Finish {
+				for s, _ := range nfa.GetFinish() {
 					if states.Has(s) {
 						DFAFinish.Insert(states_str)
 					}
@@ -465,11 +475,11 @@ func (nfa *NFA) ToDFA() *DFA {
 	for state_str, trans := range DFATrans {
 		s := dfa.States[state_str]
 		for sb, dsts := range trans {
-			dst_state := StatesToString(dsts)
+			dst_state := dsts.String()
 			s.Trans[sb] = dst_state
 		}
 	}
-	dfa.Start = DFAStart
+	dfa.Start = DFA_start_state.String()
 	dfa.Finish = DFAFinish
 	return dfa
 }

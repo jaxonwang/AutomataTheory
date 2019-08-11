@@ -14,36 +14,49 @@ func Makelist(s string) []string {
 	return sb_list
 }
 
+var decimial_cases = []struct {
+	in   string
+	want bool
+}{
+	{"1111010", false},
+	{"1.111010", true},
+	{"+1.111010", true},
+	{"-1.111010", true},
+	{"1111.010", true},
+	{".1111010", true},
+	{"123455.1111010", true},
+	{"+123455.1111010", true},
+	{"-123455.1111010", true},
+	{"a123455.1111010", false},
+	{"12.3455.1111010", false},
+	{"12.345519999999999111010", true},
+	{"a12.345519999999999111010", false},
+	{"12.3ff45519999999999111010", false},
+}
+
 func TestENFA(t *testing.T) {
 	dat_path := "../resources/decimal.enfa"
 	dat, err := ioutil.ReadFile(dat_path)
-	cases := []struct {
-		in   string
-		want bool
-	}{
-		{"1111010", false},
-		{"1.111010", true},
-		{"+1.111010", true},
-		{"-1.111010", true},
-		{"1111.010", true},
-		{".1111010", true},
-		{"123455.1111010", true},
-		{"+123455.1111010", true},
-		{"-123455.1111010", true},
-		{"a123455.1111010", false},
-		{"12.3455.1111010", false},
-		{"12.345519999999999111010", true},
-		{"a12.345519999999999111010", false},
-		{"12.3ff45519999999999111010", false},
-	}
 
 	if err != nil {
 		t.Errorf("Can not find %s", dat_path)
 	}
 
 	enfa := eNFADeserialize(string(dat))
-	for _, c := range cases {
+	for _, c := range decimial_cases {
 		if Accept(enfa, Makelist(c.in)) != c.want {
+			t.Errorf("test for %s, expect %t", c.in, c.want)
+		}
+	}
+}
+
+func TestENFAtoDFA(t *testing.T) {
+	dat_path := "../resources/decimal.enfa"
+	dat, _ := ioutil.ReadFile(dat_path)
+	enfa := eNFADeserialize(string(dat))
+	dfa := ToDFA(enfa)
+	for _, c := range decimial_cases {
+		if Accept(dfa, Makelist(c.in)) != c.want {
 			t.Errorf("test for %s, expect %t", c.in, c.want)
 		}
 	}
@@ -149,7 +162,7 @@ func TestTONFAandDFASerialize(t *testing.T) {
 		t.Errorf("Can not find %s", dat_path)
 	}
 	nfa := NFADeserialize(string(dat))
-	dfa := nfa.ToDFA()
+	dfa := ToDFA(nfa)
 	s1 := Serialize(dfa)
 	dfa1 := DFADeserialize(s1)
 	DFAequal(dfa, dfa1, t)
