@@ -1,4 +1,4 @@
-package main
+package automata
 
 import "fmt"
 import "sort"
@@ -42,6 +42,37 @@ func (s Set) Copy() Set {
 		new_s.Insert(i)
 	}
 	return new_s
+}
+
+func (s Set) String() string {
+	var s_l []string
+	for i, _ := range s {
+		s_l = append(s_l, i)
+	}
+	sort.Strings(s_l)
+	return strings.Join(s_l, ",")
+}
+
+func IsSetEqual(s2 Set, s1 Set) bool {
+	var s1_l []string
+	var s2_l []string
+	for i, _ := range s1 {
+		s1_l = append(s1_l, i)
+	}
+	for i, _ := range s2 {
+		s2_l = append(s2_l, i)
+	}
+	if len(s1) != len(s2) {
+		return false
+	}
+	sort.Strings(s1_l)
+	sort.Strings(s2_l)
+	for i := 0; i < len(s1); i++ {
+		if s1_l[i] != s2_l[i] {
+			return false
+		}
+	}
+	return true
 }
 
 const epsilon string = "epsilon"
@@ -443,18 +474,6 @@ func (nfa *NFA) ToDFA() *DFA {
 	return dfa
 }
 
-func Makelist(s string) []string {
-	sb_list := make([]string, 0, 5)
-	for _, char := range s {
-		sb_list = append(sb_list, string(char))
-	}
-	return sb_list
-}
-
-func test(at Automata, s string) {
-	fmt.Println(s, Accept(at, Makelist(s)))
-}
-
 func main() {
 	dat, err := ioutil.ReadFile("../resources/nfa.txt")
 
@@ -463,22 +482,6 @@ func main() {
 	}
 	nfa := eNFADeserialize(string(dat))
 	// s := Serialize(nfa)
-
-	test_str := "1111010"
-	test(nfa, test_str)
-	test_str = "1.111010"
-	test(nfa, test_str)
-	test_str = "1111.010"
-	test(nfa, test_str)
-	test_str = ".1111010"
-	test(nfa, test_str)
-	test_str = "123455.1111010"
-	test(nfa, test_str)
-	test_str = "12.3455.1111010"
-	test(nfa, test_str)
-	test_str = "12.345519999999999111010"
-	test(nfa, test_str)
-	test_str = "a12.345519999999999111010"
-	test(nfa, test_str)
+	fmt.Println(nfa)
 
 }

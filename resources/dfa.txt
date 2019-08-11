@@ -1,0 +1,6 @@
+S
+F1 F2
+S a F1
+S c F2
+S b F2
+S d F2
