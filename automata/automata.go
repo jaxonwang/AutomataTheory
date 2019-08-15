@@ -152,10 +152,11 @@ type NFAstate struct {
 	Trans map[string]Set
 }
 
-func NewNFAstate() *NFAstate {
+func NewNFAstate(id string) *NFAstate {
 	var s NFAstate
 	s.Trans = make(map[string]Set)
 	s.Attr = make(map[string]string)
+	s.Id = id
 	return &s
 }
 
@@ -353,13 +354,11 @@ func NFADeserialize(s string) *NFA {
 		nfa := at.(*NFA)
 		_, ok := nfa.States[from]
 		if !ok {
-			nfa.States[from] = NewNFAstate()
-			nfa.States[from].Id = from
+			nfa.States[from] = NewNFAstate(from)
 		}
 		_, ok = nfa.States[to]
 		if !ok { // state may only apper in dst part
-			nfa.States[to] = NewNFAstate()
-			nfa.States[to].Id = to
+			nfa.States[to] = NewNFAstate(to)
 		}
 		state_obj := nfa.States[from]
 		trans := state_obj.Trans

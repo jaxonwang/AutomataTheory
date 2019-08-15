@@ -168,3 +168,15 @@ func TestTONFAandDFASerialize(t *testing.T) {
 	DFAequal(dfa, dfa1, t)
 	fmt.Println()
 }
+
+func TestCFGDeserialize(t *testing.T) {
+	const palindrome = `S -> "epsilon"
+S -> "0"
+S -> "1"
+S -> "0" S "0"
+S -> "1" S "1"`
+
+	cfg := CFGDeserialize(palindrome)
+	fmt.Println(CFGSerialize(cfg))
+
+}
