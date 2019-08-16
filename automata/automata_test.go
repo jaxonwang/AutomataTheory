@@ -4,7 +4,6 @@ import "testing"
 import "io/ioutil"
 import "strings"
 import "sort"
-import "fmt"
 
 func Makelist(s string) []string {
 	sb_list := make([]string, 0, 5)
@@ -166,17 +165,125 @@ func TestTONFAandDFASerialize(t *testing.T) {
 	s1 := Serialize(dfa)
 	dfa1 := DFADeserialize(s1)
 	DFAequal(dfa, dfa1, t)
-	fmt.Println()
 }
 
-func TestCFGDeserialize(t *testing.T) {
-	const palindrome = `S -> "epsilon"
+const palindrome = `S -> "epsilon"
 S -> "0"
 S -> "1"
 S -> "0" S "0"
 S -> "1" S "1"`
 
-	cfg := CFGDeserialize(palindrome)
-	fmt.Println(CFGSerialize(cfg))
+const expression = `E -> I
+E -> E "+" E
+E -> E "*" E
+E -> "(" E ")"
+I -> "a"
+I -> "b"
+I -> I "a"
+I -> I "b"
+I -> I "0"
+I -> I "1"
+`
+
+func TestCFGDeserialize(t *testing.T) {
+
+	test_func := func(testcase string) {
+		cfg := CFGDeserialize(testcase)
+		str1 := CFGSerialize(cfg)
+		cfg1 := CFGDeserialize(str1)
+		str2 := CFGSerialize(cfg1)
+		if str1 != str2 {
+			t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+		}
+	}
+	test_func(palindrome)
+	test_func(expression)
+
+}
+
+func TestEliminateUnreachable(t *testing.T) {
+
+	const unreachable = `A -> B D
+B -> C
+B -> D E
+F -> K B
+K -> I
+F -> "a"
+E -> J
+`
+
+	const reachable = `A -> B D
+B -> C
+B -> D E
+E -> J
+`
+
+	cfg := CFGDeserialize(unreachable)
+	cfg = EliminateUnreachable(cfg)
+	str1 := CFGSerialize(cfg)
+	str2 := CFGSerialize(CFGDeserialize(reachable))
+	if str1 != str2 {
+		t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+	}
+}
+
+func TestEliminateNongenerating(t *testing.T) {
+	const gen = `A -> B C D E
+A -> B D E
+B -> G "a" H
+G -> "b"
+H -> "c"
+B -> H K
+B -> HH FJ KL
+C -> Q W R
+Q -> "f"
+W -> "w"
+D -> I
+D -> O
+D -> P
+I -> "i"
+O -> "o"
+P -> "p"
+E -> B
+JJ -> E
+KK -> JJ
+B -> KK
+`
+	const target = `A -> B D E
+B -> G "a" H
+B -> KK
+D -> I
+D -> O
+D -> P
+E -> B
+G -> "b"
+H -> "c"
+KK -> JJ
+I -> "i"
+O -> "o"
+P -> "p"
+JJ -> E`
+	cfg := CFGDeserialize(gen)
+	cfg = EliminateNongenerating(cfg)
+	str1 := CFGSerialize(cfg)
+	str2 := CFGSerialize(CFGDeserialize(target))
+	if str1 != str2 {
+		t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+	}
+}
+
+func TestEliminateUseless(t *testing.T) {
+	const test = `S -> A B
+S -> "a"
+A -> "b"`
+	const target = `S -> "a"
+A -> "b"`
+	cfg := CFGDeserialize(target)
+	cfg = EliminateNongenerating(cfg)
+	str1 := CFGSerialize(cfg)
+	str2 := CFGSerialize(CFGDeserialize(target))
+	if str1 != str2 {
+		t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+	}
 
 }
