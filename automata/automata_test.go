@@ -5,6 +5,8 @@ import "io/ioutil"
 import "strings"
 import "sort"
 
+// import "fmt"
+
 func Makelist(s string) []string {
 	sb_list := make([]string, 0, 5)
 	for _, char := range s {
@@ -286,4 +288,84 @@ A -> "b"`
 		t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
 	}
 
+}
+
+func TestEliminateEpsilon(t *testing.T) {
+	const ep1 = `A -> B D E
+A -> D F H
+B -> "epsilon"
+B -> "b"
+D -> "epsilon"
+E -> F G H
+G -> "g"
+F -> "a"
+F -> "epsilon"
+H -> "epsilon"
+`
+	const ep1_target = `
+A -> B D E
+A -> D E
+A -> B E
+A -> E
+A -> D F H
+A -> F H
+A -> D H
+A -> H
+A -> D F
+A -> F
+A -> D
+A -> "epsilon"
+B -> "b"
+E -> F G H
+E -> G H
+E -> F G
+E -> G
+F -> "a"
+G -> "g"
+`
+
+	const ep2_target = `
+A -> B C D E
+A -> "epsilon"
+A -> C D E
+A -> B D E
+A -> D E
+A -> B C E
+A -> C E
+A -> B E
+A -> E
+A -> B C D
+A -> C D
+A -> B D
+A -> D
+A -> B C
+A -> C
+A -> B
+B -> "b"
+C -> "c"
+D -> "d"
+E -> "e"
+`
+	const ep2 = `A -> B C D E
+B -> "b"
+B -> "epsilon"
+C -> "c"
+C -> "epsilon"
+D -> "d"
+D -> "epsilon"
+E -> "e"
+E -> "epsilon"
+`
+	test := func(ep string, tar string) {
+		cfg1 := CFGDeserialize(ep)
+		cfg2 := CFGDeserialize(tar)
+		cfg1 = EliminateEpsilon(cfg1)
+		str1 := CFGSerialize(cfg1)
+		str2 := CFGSerialize(cfg2)
+		if str1 != str2 {
+			t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+		}
+	}
+	test(ep1, ep1_target)
+	test(ep2, ep2_target)
 }
