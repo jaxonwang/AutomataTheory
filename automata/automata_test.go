@@ -5,7 +5,7 @@ import "io/ioutil"
 import "strings"
 import "sort"
 
-// import "fmt"
+import "fmt"
 
 func Makelist(s string) []string {
 	sb_list := make([]string, 0, 5)
@@ -356,6 +356,19 @@ D -> "epsilon"
 E -> "e"
 E -> "epsilon"
 `
+
+	const ep3 = `
+S -> A
+S -> "s"
+A -> B
+B -> A
+A -> "epsilon"
+`
+
+	const ep3_target = `
+S -> "s"
+S -> "epsilon"
+`
 	test := func(ep string, tar string) {
 		cfg1 := CFGDeserialize(ep)
 		cfg2 := CFGDeserialize(tar)
@@ -368,4 +381,119 @@ E -> "epsilon"
 	}
 	test(ep1, ep1_target)
 	test(ep2, ep2_target)
+	test(ep3, ep3_target)
+}
+
+const expression_grammar = `
+E -> T
+I -> "a"
+I -> "b"
+I -> I "a"
+I -> I "b"
+I -> I "0"
+I -> I "1"
+F -> I
+F -> "(" E ")"
+T -> F
+T -> T "*" F
+E -> E "+" T
+`
+
+func TestEliminateUnitPair(t *testing.T) {
+	const expression_target = `E -> "(" E ")"
+E -> E "+" T
+E -> T "*" F
+E -> I "a"
+E -> I "b"
+E -> I "0"
+E -> I "1"
+E -> "a"
+E -> "b"
+T -> "a"
+T -> "b"
+T -> I "a"
+T -> I "b"
+T -> I "0"
+T -> I "1"
+T -> T "*" F
+T -> "(" E ")"
+F -> "(" E ")"
+F -> "a"
+F -> "b"
+F -> I "a"
+F -> I "b"
+F -> I "0"
+F -> I "1"
+I -> "a"
+I -> "b"
+I -> I "a"
+I -> I "b"
+I -> I "0"
+I -> I "1"
+`
+	test := func(grammar string, tar string) {
+		cfg := CFGDeserialize(grammar)
+		cfg = EliminateUnitPair(cfg)
+		cfg = EliminateUseless(cfg)
+		cfg1 := CFGDeserialize(tar)
+		str1 := CFGSerialize(cfg)
+		str2 := CFGSerialize(cfg1)
+		if str1 != str2 {
+			t.Errorf("serialized unmatch %s\n\n%s\n", str1, str2)
+		}
+	}
+	const connected = `
+A -> B
+B -> C
+C -> D
+D -> E
+E -> A
+A -> "a"
+B -> "b"
+C -> "c"
+D -> "d"
+E -> "e"
+`
+	const connected_target = `
+A -> "a"
+A -> "b"
+A -> "c"
+A -> "d"
+A -> "e"
+`
+
+	const non_gen = `
+A -> "k"
+A -> B
+B -> C
+C -> D
+D -> E
+E -> A
+`
+	test(expression_grammar, expression_target)
+	test(connected, connected_target)
+	test(non_gen, "A -> \"k\"")
+}
+
+func TestToNormalForm(t *testing.T) {
+	const longproduct = `
+A -> B C D E F
+A -> D E F
+B -> "a" C D
+C -> B "b" D
+D -> D E F "d"
+D -> "epsilon"
+E -> "e" F
+F -> "a" "b" "c"
+K -> C "epsilon"
+B -> K
+A -> L
+L -> "f"
+`
+	cfg := CFGDeserialize(longproduct)
+	cfg = ToNormalForm(cfg)
+	if len(cfg.Variables) != 11 {
+		t.Errorf("Wrong nomal form")
+	}
+
 }

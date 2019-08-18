@@ -2,6 +2,7 @@ package automata
 
 import "strings"
 import "fmt"
+import "strconv"
 import "github.com/golang-collections/go-datastructures/queue"
 
 type Symbol interface {
@@ -46,8 +47,26 @@ func NewTerminal(s string) *Terminal {
 	return &Terminal{Value: s}
 }
 
-func (cfg *CFG) Print() {
-	fmt.Println(CFGSerialize(cfg))
+func (cfg *CFG) Print() { //print everything
+	for var_str, v := range cfg.Variables {
+		if len(v.Productions) == 0 {
+			fmt.Printf("%s ->\n", var_str) //also print empty production
+			continue
+		}
+		for _, product := range v.Productions {
+			fmt.Printf("%s ->", var_str)
+			for _, sb := range product {
+				switch sb.(type) {
+				case *Variable:
+					fmt.Printf(" %s", sb.Printsymbol())
+				case *Terminal:
+					fmt.Printf(" \"%s\"", sb.Printsymbol())
+				}
+			}
+			fmt.Println()
+		}
+	}
+	fmt.Println("****************")
 }
 
 func (cfg *CFG) Initvarsfrom(fromcfg *CFG) {
@@ -75,47 +94,28 @@ func EliminateUnreachable(cfg *CFG) *CFG {
 }
 
 func EliminateNongenerating(cfg *CFG) *CFG {
-	non_generating := NewSet()
 	generating := NewSet()
-	visited := NewSet()
-	var mark_non_generating func(string)
-	mark_non_generating = func(var_str string) {
-		//basis case
-		if generating.Has(var_str) || non_generating.Has(var_str) {
-			return //marked
-		}
-		all_products_non_gen := true
 
-		for _, product := range cfg.Variables[var_str].Productions {
-			the_product_is_gen := true
-			//derect non gen is like A -> emptyset, won't go inside the loop
-			for _, symbol := range product {
-				switch sb := symbol.(type) {
-				case *Variable: //only check the variable
-					mark_non_generating(sb.Id)
-					if non_generating.Has(sb.Id) { //any var is non gen, then product is non gen
-						the_product_is_gen = false
-						break
-					}
-				}
-			}
-			if the_product_is_gen { //is gengeratin. done
-				all_products_non_gen = false
-				break
+	direct_gen := func(product []Symbol) bool {
+		if len(product) == 0 {
+			return false
+		}
+		for _, sb := range product {
+			_, ok := sb.(*Terminal)
+			if !ok {
+				return false
 			}
 		}
-		if all_products_non_gen {
-			non_generating.Insert(var_str)
-		} else {
-			generating.Insert(var_str)
-		}
+		return true
 	}
+
+	Inferfromdecendent(cfg, generating, direct_gen)
 
 	product_is_gen := func(symbols []Symbol) bool {
 		for _, symbol := range symbols {
 			switch sb := symbol.(type) {
 			case *Variable: //only check the variable
-				if non_generating.Has(sb.Id) {
+				if !generating.Has(sb.Id) {
 					return false
 				}
 			}
@@ -123,16 +123,9 @@ func EliminateNongenerating(cfg *CFG) *CFG {
 		return true
 	}
 
-	for var_str, _ := range cfg.Variables {
-		if visited.Has(var_str) {
-			continue
-		}
-		mark_non_generating(var_str)
-	}
-
 	newcfg := NewCFG()
 	for var_str, v := range cfg.Variables {
-		if non_generating.Has(var_str) {
+		if !generating.Has(var_str) {
 			continue
 		}
 		newcfg.Variables[var_str] = NewVariable(var_str)
@@ -155,51 +148,91 @@ func EliminateUseless(cfg *CFG) *CFG {
 	return EliminateUnreachable(EliminateNongenerating(cfg))
 }
 
+func Inferfromdecendent(cfg *CFG, traitset Set, direct_production func([]Symbol) bool) {
+	// trait set: the set each element has certian trait
+	// direct_production: the func to determin if a production has the trait
+	appearing_list := make(map[string][]([2]interface{}))
+	counts := make(map[string][]int) // counts[var_str][product_index] = number
+
+	q := queue.New(5)
+	for var_str, v := range cfg.Variables { //init counts and appearing_list
+		counts[var_str] = make([]int, len(v.Productions))
+		once := true //only put once
+		for i, product := range v.Productions {
+			counts[var_str][i] = 0 //init counts
+			for _, sb := range product {
+				sb_v, ok := sb.(*Variable)
+				if ok {
+					counts[var_str][i]++
+					appearing_list[sb_v.Id] = append(appearing_list[sb_v.Id], [2]interface{}{var_str, i})
+				}
+			}
+			if once && direct_production(product) {
+				q.Put(var_str) //add to queue if the product is gen
+				traitset.Insert(var_str)
+				once = false
+			}
+		}
+	}
+
+	//time to count
+	for !q.Empty() {
+		_v, _ := q.Get(1)
+		var_str := _v[0].(string)
+		for _, appear := range appearing_list[var_str] {
+			v_appear := appear[0].(string)
+			counts_for_appear := counts[v_appear]
+			p_index := appear[1].(int)
+			counts_for_appear[p_index]--
+			if counts_for_appear[p_index] == 0 && !traitset.Has(v_appear) {
+				q.Put(v_appear)
+				traitset.Insert(v_appear)
+			} else if counts_for_appear[p_index] < 0 {
+				panic("Count can not be small than 0")
+			}
+		}
+	}
+}
+
 func EliminateEpsilon(cfg *CFG) *CFG { //doesnt ensure all is generating and nullable
 
 	nullable := NewSet()
-	nonnullable := NewSet()
 
-	var mark_nullable func(string)
-	mark_nullable = func(var_str string) {
-		if nullable.Has(var_str) || nonnullable.Has(var_str) {
-			return
-		}
-		var var_nullable = false
-
-		for _, product := range cfg.Variables[var_str].Productions {
-			production_nullable := true
-			for _, symbol := range product {
-				switch sb := symbol.(type) {
-				case *Terminal:
-					{
-						if sb.Value != epsilon { //non nullable
-							production_nullable = false // any sb non nullable, then production nonnullable
-							break
-						}
-					}
-				case *Variable:
-					mark_nullable(sb.Id)
-					if nonnullable.Has(sb.Id) {
-						production_nullable = false
-						break
-					}
+	//clean eplison in product like P -> "epsilon" A
+	tmp_cfg := NewCFG() //
+	tmp_cfg.Start = cfg.Start
+	tmp_cfg.Initvarsfrom(cfg)
+	for var_str, v := range cfg.Variables {
+		for _, product := range v.Productions {
+			var p []Symbol
+			for _, sb := range product {
+				t, ok := sb.(*Terminal)
+				if ok && t.Value == epsilon {
+					continue
 				}
+				p = append(p, sb)
 			}
-			if production_nullable { //any production nullable, the varialbe nuallble
-				var_nullable = true
-				break
+			if len(p) == 0 { // P -> "epsilon" "epsilon" shoule become "epsilon"
+				p = append(p, &Terminal{epsilon})
 			}
-		}
-		if var_nullable {
-			nullable.Insert(var_str)
-		} else {
-			nonnullable.Insert(var_str)
+			tmp_cfg.Variables[var_str].Productions = append(tmp_cfg.Variables[var_str].Productions, p)
 		}
 	}
-	for var_str, _ := range cfg.Variables {
-		mark_nullable(var_str)
+	cfg = tmp_cfg //no change to the origin
+
+	direct_null := func(product []Symbol) bool {
+		if len(product) == 0 {
+			return false
+		}
+		for _, sb := range product { // all term is epsilon
+			t, ok := sb.(*Terminal)
+			if !(ok && t.Value == epsilon) { //not epsilon
+				return false
+			}
+		}
+		return true
 	}
+	Inferfromdecendent(cfg, nullable, direct_null)
 
 	// time to eliminate
 
@@ -290,6 +323,119 @@ func EliminateEpsilon(cfg *CFG) *CFG { //doesnt ensure all is generating and nul
 
 }
 
+func EliminateUnitPair(cfg *CFG) *CFG {
+	var unitpairs struct {
+		pairs         map[string]Set
+		inverse_pairs map[string]Set
+	}
+	var nonunitproduct map[string][][]Symbol
+
+	unitpairs.pairs = make(map[string]Set)
+	unitpairs.inverse_pairs = make(map[string]Set)
+	nonunitproduct = make(map[string][][]Symbol)
+
+	get_dst := func(src string) Set {
+		return unitpairs.pairs[src]
+	}
+	get_src := func(dst string) Set {
+		return unitpairs.inverse_pairs[dst]
+	}
+	new_pair := func(src string, dst string) {
+		_, ok1 := unitpairs.pairs[src]
+		_, ok2 := unitpairs.inverse_pairs[dst]
+		if !ok1 {
+			unitpairs.pairs[src] = NewSet()
+		}
+		if !ok2 {
+			unitpairs.inverse_pairs[dst] = NewSet()
+		}
+		unitpairs.pairs[src].Insert(dst)
+		unitpairs.inverse_pairs[dst].Insert(src)
+	}
+
+	for var_str, _ := range cfg.Variables {
+		new_pair(var_str, var_str)
+	}
+
+	for var_str, v := range cfg.Variables { //find unit pairs
+		for _, product := range v.Productions {
+			dst, ok := product[0].(*Variable) //must be var
+			if len(product) == 1 && ok {
+				new_pair(var_str, dst.Id)
+			} else if len(product) == 0 {
+				panic("zero length production!")
+			} else {
+				_, ok := nonunitproduct[var_str]
+				if !ok {
+					nonunitproduct[var_str] = [][]Symbol{product}
+				} else {
+					nonunitproduct[var_str] = append(nonunitproduct[var_str], product)
+				}
+			}
+		}
+	}
+	// warshall algorithm find the closure O(V^3) time
+	for var_str, _ := range cfg.Variables {
+		srcs := get_src(var_str)
+		dsts := get_dst(var_str)
+		for src, _ := range srcs {
+			for dst, _ := range dsts {
+				new_pair(src, dst)
+			}
+		}
+	}
+	newcfg := NewCFG()
+	newcfg.Initvarsfrom(cfg)
+	newcfg.Start = cfg.Start
+
+	for var_str, v := range newcfg.Variables {
+		dsts := get_dst(var_str)
+		for dst, _ := range dsts {
+			prdcts, ok := nonunitproduct[dst]
+			if !ok {
+				continue
+			}
+			for _, product := range prdcts {
+				v.Productions = append(v.Productions, product)
+			}
+		}
+	}
+	return newcfg
+}
+
+func ToNormalForm(cfg *CFG) *CFG {
+
+	newcfg := NewCFG()
+	newcfg.Initvarsfrom(cfg)
+	newcfg.Start = cfg.Start
+
+	count := 0
+	NewVar := func() *Variable {
+		count++
+		return NewVariable("V" + strconv.Itoa(count)) //possible conflict, let's assume it won't
+	}
+
+	for var_str, v := range cfg.Variables {
+		for _, product := range v.Productions {
+			cur_var := newcfg.Variables[var_str]
+			i := 0
+			for ; i < len(product)-2; i++ { //break when len <=2
+				newvar := NewVar()
+				newcfg.Variables[newvar.Id] = newvar
+				cur_var.Productions = append(cur_var.Productions, []Symbol{product[i], newvar})
+				cur_var = newvar
+			}
+			p := make([]Symbol, len(product)-i)
+			copy(p, product[i:])
+			cur_var.Productions = append(cur_var.Productions, p)
+		}
+	}
+	newcfg = EliminateEpsilon(newcfg)
+	newcfg = EliminateUnitPair(newcfg)
+	newcfg = EliminateUseless(newcfg)
+	return newcfg
+}
+
 func (cfg *CFG) OrderProductions(var_str string) {
 	productions := cfg.Variables[var_str].Productions
 
@@ -328,7 +474,7 @@ func (cfg *CFG) OrderProductions(var_str string) {
 	}
 }
 
-func CFGSerialize(cfg *CFG) string { //print by BFS order
+func CFGSerialize(cfg *CFG) string { //print by BFS order, remove unreachable
 	if len(cfg.Variables) == 0 {
 		return ""
 	}
@@ -336,7 +482,9 @@ func CFGSerialize(cfg *CFG) string { //print by BFS order
 	q := queue.New(10)
 	s.Insert(cfg.Start)
 	q.Put(cfg.Start)
-	cfg.OrderProductions(cfg.Start) //order the start and everything ordered
+	for var_str, _ := range cfg.Variables {
+		cfg.OrderProductions(var_str) //order to make stable
+	}
 	var vars []string
 
 	for !q.Empty() {

@@ -41,6 +41,13 @@ func (s Set) Insert(v string) {
 	}
 }
 
+func (s Set) Delete(v string) {
+	_, ok := s[v]
+	if ok {
+		delete(s, v)
+	}
+}
+
 func (s Set) Copy() Set {
 	new_s := NewSet()
 	for i, _ := range s {
