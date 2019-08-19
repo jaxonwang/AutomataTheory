@@ -47,6 +47,99 @@ func NewTerminal(s string) *Terminal {
 	return &Terminal{Value: s}
 }
 
+type CFGMatcher struct {
+	Cfg            *CFG
+	Normalform     *CFG
+	ReverseProduct map[string]*Variable
+}
+
+func Productiontolookupstr(production []Symbol) string {
+	var sb_strs []string
+	var lookup_str string
+	for _, sb := range production {
+		switch sb.(type) {
+		case *Variable:
+			sb_strs = append(sb_strs, sb.Printsymbol())
+		case *Terminal:
+			sb_strs = append(sb_strs, "\""+sb.Printsymbol()+"\"")
+		}
+	}
+	lookup_str = strings.Join(sb_strs, ",")
+	return lookup_str
+}
+
+func (cfgmatcher *CFGMatcher) GetVariableFromProduction(production []Symbol) (*Variable, bool) {
+	if len(production) == 0 {
+		panic("First symbol can not be empty")
+	}
+	if len(production) == 1 {
+		_, ok := production[0].(*Terminal)
+		if !ok {
+			panic("The only symbol can not be Var!, not a normal form!")
+		}
+	}
+	lookup_str := Productiontolookupstr(production)
+	v, ok := cfgmatcher.ReverseProduct[lookup_str]
+	return v, ok
+}
+
+func (cfg *CFG) Compile() *CFGMatcher {
+	nomalform := ToNormalForm(cfg)
+	var cfgmatcher CFGMatcher
+	cfgmatcher.Cfg = cfg
+	cfgmatcher.Normalform = nomalform
+	cfgmatcher.ReverseProduct = make(map[string]*Variable)
+	for _, v := range cfg.Variables {
+		for _, production := range v.Productions {
+			if len(production) > 2 || len(production) == 0 {
+				panic("error len: " + strconv.Itoa(len(production)))
+			}
+			lookup_str := Productiontolookupstr(production)
+			cfgmatcher.ReverseProduct[lookup_str] = v
+		}
+	}
+	return &cfgmatcher
+}
+
+func (cfgmatcher *CFGMatcher) MatchingMatrix(s string) [][][]Symbol {
+	matrix := make([][][]Symbol, len(s))
+	for i := 0; i < len(s); i++ {
+		matrix[i] = make([][]Symbol, len(s)-i)
+	}
+	for i := 0; i < len(s); i++ {
+		elements := []Symbol{&Terminal{Value: string(s[i])}}
+		v, ok := cfgmatcher.GetVariableFromProduction(elements)
+		if ok {
+			elements = append(elements, v)
+		}
+		matrix[i][i] = elements
+	}
+
+	for l := 1; l <= len(s); l++ {
+		for i := 0; i+l <= len(s); i++ {
+			j := i + l - 1
+			elements := matrix[i][j]
+			for s := i; s < j; s++ { //split
+				left_v := matrix[i][s]
+				right_v := matrix[s+1][j]
+				for _, lv := range left_v { // left_v * right_v
+					for _, rv := range right_v {
+						v, ok := cfgmatcher.GetVariableFromProduction([]Symbol{lv, rv})
+						if ok {
+							elements = append(elements, v)
+						}
+					}
+				}
+			}
+			matrix[i][j] = elements
+		}
+	}
+	return matrix
+}
+
+func (cfgmatcher *CFGMatcher) Match() {
+}
+
 func (cfg *CFG) Print() { //print everything
 	for var_str, v := range cfg.Variables {
 		if len(v.Productions) == 0 {
